@@ -1,0 +1,14 @@
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout android:orientation="vertical" android:padding="20dp" android:layout_width="match_parent" android:layout_height="wrap_content">
+<TextView android:text="Aniimo Performance Booster" android:textSize="25sp" android:textStyle="bold" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<TextView android:id="@+id/status" android:text="Checking device..." android:paddingTop="8dp" android:paddingBottom="18dp" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<Button android:id="@+id/performance" android:text="Set Aniimo Performance" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<Button android:id="@+id/standard" android:text="Restore Standard" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<TextView android:text="Render scale" android:textStyle="bold" android:paddingTop="18dp" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<Spinner android:id="@+id/scale" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<TextView android:text="FPS target" android:textStyle="bold" android:paddingTop="14dp" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<Spinner android:id="@+id/fps" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<Button android:id="@+id/apply" android:text="Apply Aniimo profile" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<Button android:id="@+id/launch" android:text="Launch Aniimo" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+<TextView android:id="@+id/thermal" android:text="Thermal status: -" android:paddingTop="18dp" android:layout_width="match_parent" android:layout_height="wrap_content"/>
+</LinearLayout></ScrollView>
