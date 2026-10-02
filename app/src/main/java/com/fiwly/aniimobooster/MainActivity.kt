@@ -49,8 +49,22 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.launch).setOnClickListener { launchAniimo() }
         findViewById<Button>(R.id.refresh).setOnClickListener { updateStatus() }
 
+        Shizuku.addBinderReceivedListenerSticky {
+            runOnUiThread { updateStatus() }
+        }
+        Shizuku.addBinderDeadListener {
+            runOnUiThread { updateStatus() }
+        }
+        Shizuku.addRequestPermissionResultListener { requestCode, _ ->
+            if (requestCode == SHIZUKU_REQUEST) {
+                runOnUiThread { updateStatus() }
+            }
+        }
+
         updateStatus()
         requestShizukuIfNeeded()
+        window.decorView.postDelayed({ updateStatus() }, 500)
+        window.decorView.postDelayed({ updateStatus() }, 1500)
     }
 
     private fun setProfile(scalePosition: Int, fpsPosition: Int) {
@@ -75,9 +89,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun requestShizukuIfNeeded() {
-        if (Shizuku.pingBinder() &&
-            Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED)
+        if (!Shizuku.pingBinder()) {
+            result.text = "Waiting for Shizuku binder…"
+            return
+        }
+        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
             Shizuku.requestPermission(SHIZUKU_REQUEST)
+        }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -94,7 +112,8 @@ class MainActivity : AppCompatActivity() {
         }
         val gameState = if (isAniimoInstalled()) "INSTALLED" else "NOT INSTALLED"
         status.text = "ANIIMO  •  " + gameState + "\nAndroid " + Build.VERSION.RELEASE +
-            " (API " + Build.VERSION.SDK_INT + ")\nShizuku: " + shizukuState
+            " (API " + Build.VERSION.SDK_INT + ")\nShizuku: " + shizukuState +
+            "\nBinder: " + if (Shizuku.pingBinder()) "CONNECTED" else "NOT CONNECTED"
         thermal.text = if (Build.VERSION.SDK_INT >= 29)
             "Thermal: " + thermalName(pm.currentThermalStatus) else "Thermal: unavailable"
         result.text = if (getPreferences(MODE_PRIVATE).contains(ORIGINAL_OVERLAY))
