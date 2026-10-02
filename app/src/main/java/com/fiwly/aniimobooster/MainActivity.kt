@@ -77,43 +77,193 @@ class MainActivity : AppCompatActivity() {
         try { packageManager.getPackageInfo(ANIIMO, 0); true }
         catch (_: PackageManager.NameNotFoundException) { false }
 
+    private fun shizukuBinderAlive(): Boolean {
+        return try {
+            val binder = Shizuku.getBinder()
+            binder != null && binder.pingBinder()
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
+    private fun shizukuPermissionGranted(): Boolean {
+        return try {
+            shizukuBinderAlive() &&
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     private fun checkReady(): Boolean {
         if (!isAniimoInstalled()) { toast("Aniimo is not installed"); return false }
-        if (!Shizuku.pingBinder()) { toast("Start Shizuku first"); return false }
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-            Shizuku.requestPermission(SHIZUKU_REQUEST)
-            toast("Grant Shizuku permission, then try again")
+        if (!shizukuBinderAlive()) { toast("Shizuku binder is not connected"); return false }
+        if (!shizukuPermissionGranted()) {
+            try {
+                Shizuku.requestPermission(SHIZUKU_REQUEST)
+            } catch (_: Throwable) {
+                toast("Open Shizuku and authorize Aniimo Boost")
+            }
             return false
         }
         return true
     }
 
     private fun requestShizukuIfNeeded() {
-        if (!Shizuku.pingBinder()) {
-            result.text = "Waiting for Shizuku binder…"
+        if (!shizukuBinderAlive()) {
+            result.text = "Shizuku binder: NOT CONNECTED"
             return
         }
-        if (Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
-            Shizuku.requestPermission(SHIZUKU_REQUEST)
+        if (!shizukuPermissionGranted()) {
+            try {
+                Shizuku.requestPermission(SHIZUKU_REQUEST)
+            } catch (_: Throwable) {
+                result.text = "Shizuku is running, but Aniimo Boost is not authorized."
+            }
         }
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == SHIZUKU_REQUEST) updateStatus()
+    private fun applyProfile() {
+        if (!checkReady()) return
+        val s = when (scale.selectedItemPosition) {
+            0 -> "0.70"; 1 -> "0.75"; 2 -> "0.80"; else -> "1.0"
+        }
+        val f = when (fps.selectedItemPosition) {
+            0 -> "60"; 1 -> "45"; 2 -> "40"; else -> "30"
+        }
+        setBusy(true)
+        runCommand("device_config get game_overlay " + ANIIMO) { output, code ->
+            if (code != 0) {
+                finishApply(s, f, "Could not read the current Game Overlay.")
+                return@runCommand
+            }
+            val old = output.trim()
+            if (!getPreferences(MODE_PRIVATE).contains(ORIGINAL_OVERLAY)) {
+                getPreferences(MODE_PRIVATE).edit()
+                    .putString(ORIGINAL_OVERLAY, if (old == "null" || old.isBlank()) "__NULL__" else old)
+                    .apply()
+            }
+            val config = "mode=2,fps=" + f + ",downscaleFactor=" + s
+            runCommand("device_config put game_overlay " + ANIIMO + " '" + config + "'") { _, putCode ->
+                if (putCode != 0) {
+                    finishApply(s, f, "Game Overlay write failed.")
+                    return@runCommand
+                }
+                runCommand("cmd game mode performance " + ANIIMO) { _, modeCode ->
+                    if (modeCode != 0)
+                        finishApply(s, f, "Performance mode could not be enabled.")
+                    else
+                        finishApply(s, f, "Applied successfully. Fully restart Aniimo before testing.")
+                }
+            }
+        }
     }
 
-    private fun updateStatus() {
+    private fun finishApply(s: String, f: String, message: String) {
+        runOnUiThread {
+            setBusy(false)
+            result.text = "✓ " + message + "\nTarget: " + f + " FPS  •  Render: " + s + "x"
+            updateStatus()
+        }
+    }
+
+    private fun restoreDefault() {
+        if (!checkReady()) return
+        setBusy(true)
+        val saved = getPreferences(MODE_PRIVATE).getString(ORIGINAL_OVERLAY, null)
+        val command = if (saved == null || saved == "__NULL__")
+            "device_config delete game_overlay " + ANIIMO
+        else "device_config put game_overlay " + ANIIMO + " '" + saved + "'"
+
+        runCommand(command) { _, code ->
+            if (code != 0) {
+                runOnUiThread { setBusy(false); result.text = "✕ Restore failed (exit " + code + ")." }
+                return@runCommand
+            }
+            runCommand("cmd game mode standard " + ANIIMO) { _, modeCode ->
+                getPreferences(MODE_PRIVATE).edit().remove(ORIGINAL_OVERLAY).apply()
+                runOnUiThread {
+                    setBusy(false)
+                    result.text = if (modeCode == 0)
+                        "✓ Restored Aniimo default settings."
+                    else "✓ Overlay restored. Standard mode returned exit " + modeCode + "."
+                    updateStatus()
+                }
+            }
+        }
+    }
+
+    private fun launchAniimo() {
+        if (!isAniimoInstalled()) { toast("Aniimo is not installed"); return }
+        packageManager.getLaunchIntentForPackage(ANIIMO)?.let(::startActivity)
+            ?: toast("Aniimo launch activity not found")
+    }
+
+    private fun runCommand(command: String, successMessage: String? = null, done: ((String, Int) -> Unit)? = null) {
+        if (!shizukuPermissionGranted()) {
+            toast("Shizuku permission is not ready")
+            return
+        }
+        Thread {
+            try {
+                val method = Shizuku::class.java.getDeclaredMethod(
+                    "newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+                method.isAccessible = true
+                val process = method.invoke(null, arrayOf("sh", "-c", command), null, null)
+                    as rikka.shizuku.ShizukuRemoteProcess
+                val output = BufferedReader(InputStreamReader(process.inputStream)).readText()
+                val error = BufferedReader(InputStreamReader(process.errorStream)).readText()
+                val code = process.waitFor()
+                process.destroy()
+                val combined = (output + error).trim()
+                if (done != null) runOnUiThread { done(combined, code) }
+                else runOnUiThread {
+                    setBusy(false)
+                    result.text = if (code == 0) "✓ " + (successMessage ?: "Command completed")
+                    else "✕ Command failed (exit " + code + ")\n" + combined
+                    updateStatus()
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    setBusy(false)
+                    result.text = "✕ Failed: " + (e.message ?: "unknown error")
+                }
+            }
+        }.start()
+    }
+
+    private fun setBusy(busy: Boolean) {
+        apply.isEnabled = !busy
+        listOf(R.id.max, R.id.balanced, R.id.cooler, R.id.performance, R.id.standard, R.id.launch, R.id.refresh)
+            .forEach { findViewById<Button>(it).isEnabled = !busy }
+    }
+
+    private fun thermalName(v: Int) = when (v) {
+        PowerManager.THERMAL_STATUS_NONE -> "NORMAL"
+        PowerManager.THERMAL_STATUS_LIGHT -> "LIGHT"
+        PowerManager.THERMAL_STATUS_MODERATE -> "MODERATE"
+        PowerManager.THERMAL_STATUS_SEVERE -> "SEVERE"
+        PowerManager.THERMAL_STATUS_CRITICAL -> "CRITICAL"
+        PowerManager.THERMAL_STATUS_EMERGENCY -> "EMERGENCY"
+        PowerManager.THERMAL_STATUS_SHUTDOWN -> "SHUTDOWN"
+        else -> "UNKNOWN (" + v + ")"
+    }
+
+    private fun toast(message: String) = Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+}    private fun updateStatus() {
         val pm = getSystemService(PowerManager::class.java)
+        val binder = shizukuBinderAlive()
+        val permission = shizukuPermissionGranted()
         val shizukuState = when {
-            !Shizuku.pingBinder() -> "NOT RUNNING"
-            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED -> "CONNECTED + GRANTED"
-            else -> "CONNECTED / PERMISSION NEEDED"
+            !binder -> "NOT RUNNING / BINDER NOT CONNECTED"
+            permission -> "RUNNING + AUTHORIZED"
+            else -> "RUNNING / AUTHORIZATION NEEDED"
         }
         val gameState = if (isAniimoInstalled()) "INSTALLED" else "NOT INSTALLED"
         status.text = "ANIIMO  •  " + gameState + "\nAndroid " + Build.VERSION.RELEASE +
             " (API " + Build.VERSION.SDK_INT + ")\nShizuku: " + shizukuState +
-            "\nBinder: " + if (Shizuku.pingBinder()) "CONNECTED" else "NOT CONNECTED"
+            "\nBinder: " + if (binder) "CONNECTED" else "NOT CONNECTED" +
+            "\nPermission: " + if (permission) "GRANTED" else "NOT GRANTED"
         thermal.text = if (Build.VERSION.SDK_INT >= 29)
             "Thermal: " + thermalName(pm.currentThermalStatus) else "Thermal: unavailable"
         result.text = if (getPreferences(MODE_PRIVATE).contains(ORIGINAL_OVERLAY))
