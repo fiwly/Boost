@@ -108,7 +108,9 @@ class MainActivity : AppCompatActivity() {
         }
         Thread {
             try {
-                val p = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
+                val method = Shizuku::class.java.getDeclaredMethod("newProcess", Array<String>::class.java, Array<String>::class.java, String::class.java)
+                method.isAccessible = true
+                val p = method.invoke(null, arrayOf("sh", "-c", command), null, null) as rikka.shizuku.ShizukuRemoteProcess
                 val out = BufferedReader(InputStreamReader(p.inputStream)).readText()
                 val err = BufferedReader(InputStreamReader(p.errorStream)).readText()
                 val code = p.waitFor()
