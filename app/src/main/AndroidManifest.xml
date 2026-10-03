@@ -2,7 +2,30 @@
     <queries>
         <package android:name="com.x.aniimos" />
     </queries>
-<uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
-<application android:theme="@style/AppTheme" android:label="Aniimo Performance Booster" android:allowBackup="false" android:supportsRtl="true">
-<activity android:name=".MainActivity" android:exported="true"><intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter></activity>
-</application></manifest>
+
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23"/>
+
+    <application
+        android:theme="@style/AppTheme"
+        android:label="Aniimo Performance Booster"
+        android:allowBackup="false"
+        android:supportsRtl="true">
+
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
